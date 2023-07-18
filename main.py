@@ -20,8 +20,6 @@ end = dt.datetime(2020,1,1)
 
 data, meta_data = ts.get_daily(symbol=company, outputsize='full')
 
-print(data.columns)
-
 #Prep Data
 scaler = MinMaxScaler(feature_range=(0,1))
 scaled_data = scaler.fit_transform(data['4. close'].values.reshape(-1,1))
