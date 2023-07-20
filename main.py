@@ -9,12 +9,13 @@ from keras.models import Sequential
 from keras.layers import Dense, Dropout, LSTM
 from alpha_vantage.timeseries import TimeSeries
 from matplotlib import dates as mdates
+from keras.regularizers import l2
 
 api_key = 'G8TI1VY50NJ6W74T'
 ts = TimeSeries(key=api_key, output_format='pandas')
 
 #Load Data
-company = 'TSLA'
+company = 'META'
 
 start = dt.datetime(2012,1,1)
 end = dt.datetime(2020,1,1)
@@ -37,19 +38,19 @@ for x in range(prediction_days, len(scaled_data)):
 x_train, y_train = np.array(x_train), np.array(y_train)
 x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
 
-#Build The Model
+# Build The Model
 model = Sequential()
 
-model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1), kernel_regularizer=l2(0.01)))
 model.add(Dropout(0.2))
-model.add(LSTM(units=50, return_sequences=True))
+model.add(LSTM(units=50, return_sequences=True, kernel_regularizer=l2(0.01)))
 model.add(Dropout(0.2))
-model.add(LSTM(units=50))
+model.add(LSTM(units=50, kernel_regularizer=l2(0.01)))
 model.add(Dropout(0.2))
-model.add(Dense(units=1)) #Prediction of the next closing price
+model.add(Dense(units=1, kernel_regularizer=l2(0.01))) # Prediction of the next closing price
 
 model.compile(optimizer='adam', loss='mean_squared_error')
-model.fit(x_train, y_train, epochs=25, batch_size=32, validation_split=0.1)
+model.fit(x_train, y_train, epochs=50, batch_size=32, validation_split=0.2)
 
 '''Test The Model Accuracy on Existing Data'''
 
@@ -103,11 +104,23 @@ plt.grid(True, linestyle='--', linewidth=0.5, which='both', color='lightgrey')
 plt.tight_layout()
 plt.show()
 
-#Predicting Next Day
-real_data = [model_inputs[len(model_inputs) + 1 - prediction_days:len(model_inputs + 1), 0]]
-real_data = np.array(real_data)
-real_data = np.reshape(real_data, (real_data.shape[0], real_data.shape[1],1))
+#Predicting into the future
+days_to_predict = 14 
+real_data = model_inputs[len(model_inputs) - prediction_days : len(model_inputs), 0]
+predictions = []
 
-prediction = model.predict(real_data)
-prediction = scaler.inverse_transform(prediction)
-print(f"prediction: {prediction}")
+for _ in range(days_to_predict):
+    # Reshape and predict for the current sequence
+    real_data = np.array(real_data)
+    real_data = np.reshape(real_data, (1, prediction_days, 1))
+    prediction = model.predict(real_data)
+    predictions.append(scaler.inverse_transform(prediction)[0, 0])
+    
+    # Update real_data with the predicted value for the next iteration
+    real_data = np.roll(real_data, -1)
+    real_data[0, -1, 0] = prediction
+
+
+print("Predictions for the next 14 days:")
+for i, pred in enumerate(predictions, start=1):
+    print(f"Day {i}: {pred:.2f}")
