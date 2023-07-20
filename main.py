@@ -8,12 +8,13 @@ from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, LSTM
 from alpha_vantage.timeseries import TimeSeries
+from matplotlib import dates as mdates
 
 api_key = 'G8TI1VY50NJ6W74T'
 ts = TimeSeries(key=api_key, output_format='pandas')
 
 #Load Data
-company = 'META'
+company = 'TSLA'
 
 start = dt.datetime(2012,1,1)
 end = dt.datetime(2020,1,1)
@@ -78,11 +79,35 @@ x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 predicted_prices = model.predict(x_test)
 predicted_prices = scaler.inverse_transform(predicted_prices)
 
-#Plot Test Predictions
-plt.plot(actual_prices, color="black", label=f"Actual {company} Price")
-plt.plot(predicted_prices, color="red", label=f"Predicted {company} Price")
+# Convert dates to numerical format for the x-axis
+dts_actual = pd.to_datetime(test_data.index)
+dts_predicted = pd.to_datetime(test_data.index[-len(predicted_prices):])
+dts_actual_num = mdates.date2num(dts_actual)
+dts_predicted_num = mdates.date2num(dts_predicted)
+
+# Plot Test Predictions
+plt.plot(dts_actual_num, actual_prices, color="black", label=f"Actual {company} Price")
+plt.plot(dts_predicted_num, predicted_prices, color="red", label=f"Predicted {company} Price")
 plt.title(f"{company} Share Price")
 plt.xlabel('Time')
 plt.ylabel(f'{company} Share Price')
 plt.legend()
+
+years = mdates.YearLocator()
+yearsFmt = mdates.DateFormatter('\n%Y')
+
+plt.gca().xaxis.set_major_locator(years)
+plt.gca().xaxis.set_major_formatter(yearsFmt)
+plt.xticks(rotation=45) 
+plt.grid(True, linestyle='--', linewidth=0.5, which='both', color='lightgrey')
+plt.tight_layout()
 plt.show()
+
+#Predicting Next Day
+real_data = [model_inputs[len(model_inputs) + 1 - prediction_days:len(model_inputs + 1), 0]]
+real_data = np.array(real_data)
+real_data = np.reshape(real_data, (real_data.shape[0], real_data.shape[1],1))
+
+prediction = model.predict(real_data)
+prediction = scaler.inverse_transform(prediction)
+print(f"prediction: {prediction}")
