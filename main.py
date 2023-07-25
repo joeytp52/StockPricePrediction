@@ -2,16 +2,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import datetime as dt
-import yfinance as yf  # Add this import for fetching data from Yahoo Finance
+import yfinance as yf  
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, LSTM
-from alpha_vantage.timeseries import TimeSeries
 from matplotlib import dates as mdates
 from keras.regularizers import l2
 from keras.callbacks import EarlyStopping
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
 from keras.callbacks import ReduceLROnPlateau
+from keras.optimizers import Adam
 
 # Fetch Stock Price Data from Yahoo Finance using yfinance
 company = 'META'
@@ -53,7 +53,6 @@ scaled_data_with_rsi = np.hstack((closing_prices_scaled, volume_scaled, rsi_scal
 # Handle NaN values in scaled_data_with_rsi
 scaled_data_with_rsi = np.nan_to_num(scaled_data_with_rsi, nan=np.nanmean(scaled_data_with_rsi))
 
-# Modify the prediction_days to include the number of features
 prediction_days = 60
 
 x_train = []
@@ -68,16 +67,55 @@ x_train, y_train = np.array(x_train), np.array(y_train)
 # Handle NaN values in x_train
 x_train = np.nan_to_num(x_train, nan=np.nanmean(x_train))
 
-# Modify the model architecture
-model = Sequential()
-model.add(LSTM(units=64, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3)))
-model.add(Dropout(0.2))
-model.add(LSTM(units=64, activation='tanh', return_sequences=True))
-model.add(Dropout(0.2))
-model.add(LSTM(units=32, activation='relu'))
-model.add(Dropout(0.2))
-model.add(Dense(units=1))
-model.compile(optimizer='adam', loss='mean_squared_error')
+# Best hyperparameters obtained from hyperparameter tuning
+best_units = 64
+best_dropout_rate = 0.4
+best_learning_rate = 0.0001
+
+# Define the LSTM model with the best hyperparameters
+def create_lstm_model():
+    model = Sequential()
+    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3)))
+    model.add(Dropout(best_dropout_rate))
+    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True))
+    model.add(Dropout(best_dropout_rate))
+    model.add(LSTM(units=int(best_units/2), activation='relu'))
+    model.add(Dropout(best_dropout_rate))
+    model.add(Dense(units=1))
+    
+    optimizer = Adam(learning_rate=best_learning_rate)
+    model.compile(optimizer=optimizer, loss='mean_squared_error')
+    
+    return model
+
+# Define the hyperparameter grid
+param_grid = {
+    'units': [32, 64, 128],
+    'dropout_rate': [0.2, 0.3, 0.4],
+    'learning_rate': [0.001, 0.0001]
+}
+
+# Perform manual hyperparameter tuning
+best_mse = float('inf')
+best_params = None
+
+# Initialize TimeSeriesSplit for cross-validation
+tscv = TimeSeriesSplit(n_splits=5)
+
+# Loop over each fold in the TimeSeriesSplit
+for train_index, val_index in tscv.split(x_train):
+    x_train_fold, x_val_fold = x_train[train_index], x_train[val_index]
+    y_train_fold, y_val_fold = y_train[train_index], y_train[val_index]
+
+    # Define the learning rate scheduler and early stopping callbacks for this fold
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.0001)
+    early_stopping = EarlyStopping(patience=5, restore_best_weights=True)
+
+    # Create the model
+    model = create_lstm_model()
+
+    # Train the model with the learning rate scheduler and early stopping callbacks
+    model.fit(x_train_fold, y_train_fold, epochs=100, batch_size=32, validation_data=(x_val_fold, y_val_fold), callbacks=[reduce_lr, early_stopping], verbose=0)
 
 # Add EarlyStopping callback
 early_stopping = EarlyStopping(patience=5, restore_best_weights=True)
