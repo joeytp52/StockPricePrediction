@@ -127,9 +127,11 @@ n_splits = 5
 tscv = TimeSeriesSplit(n_splits=n_splits)
 
 fold = 1
+mean_squared_errors = []
+
 for train_index, test_index in tscv.split(x_train):
     print(f"Training Fold {fold}")
-    
+
     # Get the indices for training and validation data
     x_train_fold, x_val_fold = x_train[train_index], x_train[test_index]
     y_train_fold, y_val_fold = y_train[train_index], y_train[test_index]
@@ -140,17 +142,24 @@ for train_index, test_index in tscv.split(x_train):
     # Make predictions for the validation set
     predictions_fold = model.predict(x_val_fold)
 
-    # Store the predictions for this fold
+    # Store the predictions and true values for this fold
     predictions_fold = np.array(predictions_fold)
     predictions_fold = scaler.inverse_transform(predictions_fold.reshape(-1, 1)).flatten()
+    true_values_fold = scaler.inverse_transform(y_val_fold.reshape(-1, 1)).flatten()
 
-    # Evaluate the performance on this fold
-    mse = np.mean((predictions_fold - scaler.inverse_transform(y_val_fold.reshape(-1, 1)).flatten()) ** 2)
+    # Evaluate the performance on this fold (calculate Mean Squared Error)
+    mse = np.mean((predictions_fold - true_values_fold) ** 2)
     print(f"Mean Squared Error for Fold {fold}: {mse}")
+
+    # Store the MSE for this fold
+    mean_squared_errors.append(mse)
 
     print(f"Completed Fold {fold} out of {n_splits}")
     fold += 1
 
+# Calculate the average MSE across all folds
+average_mse = np.mean(mean_squared_errors)
+print(f"Average Mean Squared Error across {n_splits} folds: {average_mse}")
 
 # Convert dates to numerical format for the x-axis
 dts_actual = pd.to_datetime(test_data.index)
