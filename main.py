@@ -1,84 +1,156 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import pandas_datareader as web
 import datetime as dt
-
+import yfinance as yf  # Add this import for fetching data from Yahoo Finance
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, LSTM
 from alpha_vantage.timeseries import TimeSeries
 from matplotlib import dates as mdates
 from keras.regularizers import l2
+from keras.callbacks import EarlyStopping
+from sklearn.model_selection import TimeSeriesSplit
+from keras.callbacks import ReduceLROnPlateau
 
-api_key = 'G8TI1VY50NJ6W74T'
-ts = TimeSeries(key=api_key, output_format='pandas')
-
-#Load Data
+# Fetch Stock Price Data from Yahoo Finance using yfinance
 company = 'META'
+start = dt.datetime(2012, 1, 1)
+end = dt.datetime(2020, 1, 1)
 
-start = dt.datetime(2012,1,1)
-end = dt.datetime(2020,1,1)
+data = yf.download(company, start=start, end=end)
 
-data, meta_data = ts.get_daily(symbol=company, outputsize='full')
+# Prep Data
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_data = scaler.fit_transform(data['Close'].values.reshape(-1, 1))
 
-#Prep Data
-scaler = MinMaxScaler(feature_range=(0,1))
-scaled_data = scaler.fit_transform(data['4. close'].values.reshape(-1,1))
+# Calculate RSI for the closing prices
+def calculate_rsi(data, period=14):
+    delta = data.diff(1)
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
 
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+
+    relative_strength = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + relative_strength))
+    
+    return rsi
+
+# Calculate RSI for the closing prices
+closing_prices = data['Close']
+rsi = calculate_rsi(closing_prices) / 100
+
+# Scale the RSI data along with the closing price and volume data
+closing_prices_scaled = scaler.transform(closing_prices.values.reshape(-1, 1))
+volume_scaled = scaler.transform(data['Volume'].values.reshape(-1, 1))
+rsi_scaled = scaler.transform(rsi.values.reshape(-1, 1))
+
+# Merge the scaled data into a single dataset
+scaled_data_with_rsi = np.hstack((closing_prices_scaled, volume_scaled, rsi_scaled))
+
+# Handle NaN values in scaled_data_with_rsi
+scaled_data_with_rsi = np.nan_to_num(scaled_data_with_rsi, nan=np.nanmean(scaled_data_with_rsi))
+
+# Modify the prediction_days to include the number of features
 prediction_days = 60
 
 x_train = []
 y_train = []
 
-for x in range(prediction_days, len(scaled_data)):
-    x_train.append(scaled_data[x-prediction_days:x, 0])
-    y_train.append(scaled_data[x, 0])
+for x in range(prediction_days, len(scaled_data_with_rsi)):
+    x_train.append(scaled_data_with_rsi[x - prediction_days:x, :])
+    y_train.append(scaled_data_with_rsi[x, 0])  # Use the closing price as the target
 
 x_train, y_train = np.array(x_train), np.array(y_train)
-x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
 
-# Build The Model
+# Handle NaN values in x_train
+x_train = np.nan_to_num(x_train, nan=np.nanmean(x_train))
+
+# Modify the model architecture
 model = Sequential()
-
-model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1), kernel_regularizer=l2(0.01)))
+model.add(LSTM(units=64, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3)))
 model.add(Dropout(0.2))
-model.add(LSTM(units=50, return_sequences=True, kernel_regularizer=l2(0.01)))
+model.add(LSTM(units=64, activation='tanh', return_sequences=True))
 model.add(Dropout(0.2))
-model.add(LSTM(units=50, kernel_regularizer=l2(0.01)))
+model.add(LSTM(units=32, activation='relu'))
 model.add(Dropout(0.2))
-model.add(Dense(units=1, kernel_regularizer=l2(0.01))) # Prediction of the next closing price
-
+model.add(Dense(units=1))
 model.compile(optimizer='adam', loss='mean_squared_error')
-model.fit(x_train, y_train, epochs=50, batch_size=32, validation_split=0.2)
+
+# Add EarlyStopping callback
+early_stopping = EarlyStopping(patience=5, restore_best_weights=True)
+
+# Define the learning rate scheduler
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.0001)
+
+# Compile the model with the optimizer and loss function
+model.compile(optimizer='adam', loss='mean_squared_error')
 
 '''Test The Model Accuracy on Existing Data'''
 
-#Load Test Data
-test_start = dt.datetime(2020,1,1)
+# Load Test Data
+test_start = dt.datetime(2020, 1, 1)
 test_end = dt.datetime.now()
 
-test_data, test_meta_data = ts.get_daily(symbol=company, outputsize='full')
-actual_prices = test_data['4. close'].values
+# Fetch test data from Yahoo Finance
+test_data = yf.download(company, start=test_start, end=test_end)
 
-total_dataset = pd.concat((data['4. close'], test_data['4. close']), axis=0)
+# Extract actual closing prices from test_data
+actual_prices = test_data['Close'].values
 
-model_inputs = total_dataset[len(total_dataset) - len(test_data) - prediction_days:].values
-model_inputs = model_inputs.reshape(-1, 1)
-model_inputs = scaler.transform(model_inputs)
+# Calculate RSI for the test closing prices
+test_closing_prices = test_data['Close']
+test_rsi = calculate_rsi(test_closing_prices)
 
-#Make Predictions on Test Data
+# Scale the test data along with the existing volume data
+test_volume_scaled = scaler.transform(test_data['Volume'].values.reshape(-1, 1))
+test_rsi_scaled = scaler.transform(test_rsi.values.reshape(-1, 1))
 
+# Merge the scaled test data (excluding the closing price) into the existing dataset
+test_data_with_rsi = np.hstack((test_closing_prices.values.reshape(-1, 1), test_volume_scaled, test_rsi_scaled))
+
+# Prepare x_test with all three features
 x_test = []
-
-for x in range(prediction_days, len(model_inputs)):
-    x_test.append(model_inputs[x-prediction_days:x, 0])
+for x in range(prediction_days, len(test_data_with_rsi)):
+    x_test.append(test_data_with_rsi[x - prediction_days:x, :])
 
 x_test = np.array(x_test)
-x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], x_test.shape[2]))  # Ensure the correct shape
 
 predicted_prices = model.predict(x_test)
 predicted_prices = scaler.inverse_transform(predicted_prices)
+
+# Implement walk-forward validation
+n_splits = 5
+tscv = TimeSeriesSplit(n_splits=n_splits)
+
+fold = 1
+for train_index, test_index in tscv.split(x_train):
+    print(f"Training Fold {fold}")
+    
+    # Get the indices for training and validation data
+    x_train_fold, x_val_fold = x_train[train_index], x_train[test_index]
+    y_train_fold, y_val_fold = y_train[train_index], y_train[test_index]
+
+    # Train the model with the learning rate scheduler and early stopping callbacks
+    model.fit(x_train_fold, y_train_fold, epochs=100, batch_size=32, validation_data=(x_val_fold, y_val_fold), callbacks=[reduce_lr, early_stopping])
+
+    # Make predictions for the validation set
+    predictions_fold = model.predict(x_val_fold)
+
+    # Store the predictions for this fold
+    predictions_fold = np.array(predictions_fold)
+    predictions_fold = scaler.inverse_transform(predictions_fold.reshape(-1, 1)).flatten()
+
+    # Evaluate the performance on this fold
+    mse = np.mean((predictions_fold - scaler.inverse_transform(y_val_fold.reshape(-1, 1)).flatten()) ** 2)
+    print(f"Mean Squared Error for Fold {fold}: {mse}")
+
+    print(f"Completed Fold {fold} out of {n_splits}")
+    fold += 1
+
 
 # Convert dates to numerical format for the x-axis
 dts_actual = pd.to_datetime(test_data.index)
@@ -99,27 +171,34 @@ yearsFmt = mdates.DateFormatter('\n%Y')
 
 plt.gca().xaxis.set_major_locator(years)
 plt.gca().xaxis.set_major_formatter(yearsFmt)
-plt.xticks(rotation=45) 
+plt.xticks(rotation=45)
 plt.grid(True, linestyle='--', linewidth=0.5, which='both', color='lightgrey')
 plt.tight_layout()
 plt.show()
 
-#Predicting into the future
-days_to_predict = 14 
-real_data = model_inputs[len(model_inputs) - prediction_days : len(model_inputs), 0]
+# Predicting into the future
+days_to_predict = 14
+real_data = x_test[-1]  # Use the entire last sequence in x_test as the initial real_data
 predictions = []
 
-for _ in range(days_to_predict):
-    # Reshape and predict for the current sequence
-    real_data = np.array(real_data)
-    real_data = np.reshape(real_data, (1, prediction_days, 1))
-    prediction = model.predict(real_data)
-    predictions.append(scaler.inverse_transform(prediction)[0, 0])
-    
-    # Update real_data with the predicted value for the next iteration
-    real_data = np.roll(real_data, -1)
-    real_data[0, -1, 0] = prediction
+# Create a scaler for the closing price
+scaler_price = MinMaxScaler(feature_range=(0, 1))
 
+for _ in range(days_to_predict):
+    # Extract the closing price for scaling
+    closing_price = real_data[:, 0]
+
+    # Scale the closing price
+    closing_price_scaled = scaler_price.fit_transform(closing_price.reshape(-1, 1))
+
+    real_data_reshaped = np.reshape(real_data, (1, prediction_days, 3))
+
+    # Predict the next value
+    prediction = model.predict(real_data_reshaped)
+    predictions.append(scaler_price.inverse_transform(prediction)[0, 0])
+
+    # Update real_data with the predicted value for the next iteration
+    real_data = np.concatenate([real_data[1:], np.array([[prediction[0, 0], 0, 0]])], axis=0)
 
 print("Predictions for the next 14 days:")
 for i, pred in enumerate(predictions, start=1):
