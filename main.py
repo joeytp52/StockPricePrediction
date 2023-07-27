@@ -2,15 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import datetime as dt
-import yfinance as yf  
+import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, LSTM
 from matplotlib import dates as mdates
 from keras.regularizers import l2
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
-from keras.callbacks import ReduceLROnPlateau
 from keras.optimizers import Adam
 
 # Fetch Stock Price Data from Yahoo Finance using yfinance
@@ -19,10 +18,6 @@ start = dt.datetime(2012, 1, 1)
 end = dt.datetime(2020, 1, 1)
 
 data = yf.download(company, start=start, end=end)
-
-# Prep Data
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data['Close'].values.reshape(-1, 1))
 
 # Calculate RSI for the closing prices
 def calculate_rsi(data, period=14):
@@ -36,12 +31,15 @@ def calculate_rsi(data, period=14):
     relative_strength = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + relative_strength))
     
-    return rsi
+    return rsi / 100  # Scaling the RSI values to the range [0, 1]
 
 # Calculate RSI for the closing prices
 closing_prices = data['Close']
-rsi = calculate_rsi(closing_prices) / 100
+rsi = calculate_rsi(closing_prices)
 
+# Prep Data
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_data = scaler.fit_transform(closing_prices.values.reshape(-1, 1))
 # Scale the RSI data along with the closing price and volume data
 closing_prices_scaled = scaler.transform(closing_prices.values.reshape(-1, 1))
 volume_scaled = scaler.transform(data['Volume'].values.reshape(-1, 1))
@@ -73,20 +71,84 @@ best_dropout_rate = 0.4
 best_learning_rate = 0.0001
 
 # Define the LSTM model with the best hyperparameters
-def create_lstm_model():
+def create_lstm_model(units, dropout_rate, learning_rate):
     model = Sequential()
-    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3)))
-    model.add(Dropout(best_dropout_rate))
-    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True))
-    model.add(Dropout(best_dropout_rate))
-    model.add(LSTM(units=int(best_units/2), activation='relu'))
-    model.add(Dropout(best_dropout_rate))
+    model.add(LSTM(units=units, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3)))
+    model.add(Dropout(dropout_rate))
+    model.add(LSTM(units=units, activation='tanh', return_sequences=True))
+    model.add(Dropout(dropout_rate))
+    model.add(LSTM(units=int(units/2), activation='relu'))
+    model.add(Dropout(dropout_rate))
     model.add(Dense(units=1))
     
-    optimizer = Adam(learning_rate=best_learning_rate)
+    optimizer = Adam(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss='mean_squared_error')
     
     return model
+
+def get_scaled_data(train_data, test_data):
+    scaler = MinMaxScaler(feature_range=(0, 1))
+
+    # Fit the scaler on the training data
+    scaler.fit(train_data)
+
+    # Scale the training and test data using the same scaler
+    train_scaled = scaler.transform(train_data)
+    test_scaled = scaler.transform(test_data)
+
+    return train_scaled, test_scaled
+
+def get_test_data(company):
+    test_start = dt.datetime(2020, 1, 1)
+    test_end = dt.datetime.now()
+
+    # Fetch test data from Yahoo Finance
+    test_data = yf.download(company, start=test_start, end=test_end)
+
+    # Calculate RSI for the test closing prices
+    test_closing_prices = test_data['Close']
+    test_rsi = calculate_rsi(test_closing_prices)
+
+    # Merge the test data into a single dataset
+    test_data_with_rsi = np.hstack((test_closing_prices.values.reshape(-1, 1), test_data['Volume'].values.reshape(-1, 1), test_rsi.values.reshape(-1, 1)))
+
+    # Handle NaN values in test_data_with_rsi within this fold
+    test_data_with_rsi = np.nan_to_num(test_data_with_rsi, nan=np.nanmean(test_data_with_rsi))
+
+    # Separate the closing prices, volume, and RSI data
+    test_closing_prices = test_data_with_rsi[:, 0]
+    test_volume = test_data_with_rsi[:, 1]
+    test_rsi = test_data_with_rsi[:, 2]
+
+    # Get scaled data for closing prices, volume, and RSI within this fold
+    test_closing_prices_scaled, test_volume_scaled, test_rsi_scaled = get_scaled_data(test_closing_prices.reshape(-1, 1), test_volume.reshape(-1, 1), test_rsi.reshape(-1, 1))
+
+    # Merge the scaled test data (excluding the closing price) into the existing dataset
+    test_data_with_rsi_scaled = np.hstack((test_closing_prices_scaled, test_volume_scaled, test_rsi_scaled))
+
+    # Prepare x_test with all three features
+    x_test = []
+    for x in range(prediction_days, len(test_data_with_rsi_scaled)):
+        x_test.append(test_data_with_rsi_scaled[x - prediction_days:x, :])
+
+    x_test = np.array(x_test)
+    x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], x_test.shape[2]))  # Ensure the correct shape
+
+    return x_test, test_closing_prices
+
+def train_and_evaluate_model(model, x_train, y_train, x_val, y_val):
+    # Define the learning rate scheduler and early stopping callbacks
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.0001)
+    early_stopping = EarlyStopping(patience=5, restore_best_weights=True)
+
+    # Train the model with the learning rate scheduler and early stopping callbacks
+    model.fit(x_train, y_train, epochs=100, batch_size=32, validation_data=(x_val, y_val), callbacks=[reduce_lr, early_stopping])
+
+    # Evaluate the performance on the validation set (calculate Mean Squared Error)
+    mse = model.evaluate(x_val, y_val, verbose=0)
+    print(f"Mean Squared Error: {mse}")
+
+    return model, mse
 
 # Define the hyperparameter grid
 param_grid = {
@@ -99,23 +161,32 @@ param_grid = {
 best_mse = float('inf')
 best_params = None
 
-# Initialize TimeSeriesSplit for cross-validation
-tscv = TimeSeriesSplit(n_splits=5)
+# Perform TimeSeriesSplit for cross-validation
+n_splits = 5
+tscv = TimeSeriesSplit(n_splits=n_splits)
 
 # Loop over each fold in the TimeSeriesSplit
+fold = 1
+mean_squared_errors = []
+
 for train_index, val_index in tscv.split(x_train):
+    print(f"Training Fold {fold}")
+
+    # Get the indices for training and validation data
     x_train_fold, x_val_fold = x_train[train_index], x_train[val_index]
     y_train_fold, y_val_fold = y_train[train_index], y_train[val_index]
 
-    # Define the learning rate scheduler and early stopping callbacks for this fold
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.0001)
-    early_stopping = EarlyStopping(patience=5, restore_best_weights=True)
+    # Create the model with the best hyperparameters
+    model = create_lstm_model(best_units, best_dropout_rate, best_learning_rate)
 
-    # Create the model
-    model = create_lstm_model()
+    # Train and evaluate the model on this fold
+    model, mse = train_and_evaluate_model(model, x_train_fold, y_train_fold, x_val_fold, y_val_fold)
 
-    # Train the model with the learning rate scheduler and early stopping callbacks
-    model.fit(x_train_fold, y_train_fold, epochs=100, batch_size=32, validation_data=(x_val_fold, y_val_fold), callbacks=[reduce_lr, early_stopping], verbose=0)
+    # Store the MSE for this fold
+    mean_squared_errors.append(mse)
+
+    print(f"Completed Fold {fold} out of {n_splits}")
+    fold += 1
 
 # Add EarlyStopping callback
 early_stopping = EarlyStopping(patience=5, restore_best_weights=True)
@@ -160,44 +231,35 @@ x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], x_test.shape[2]))
 predicted_prices = model.predict(x_test)
 predicted_prices = scaler.inverse_transform(predicted_prices)
 
-# Implement walk-forward validation
-n_splits = 5
-tscv = TimeSeriesSplit(n_splits=n_splits)
+# Walk-forward validation
+n_splits_walk_forward = 5
+tscv_walk_forward = TimeSeriesSplit(n_splits=n_splits_walk_forward)
 
 fold = 1
 mean_squared_errors = []
 
-for train_index, test_index in tscv.split(x_train):
+for train_index, test_index in tscv_walk_forward.split(x_train):
     print(f"Training Fold {fold}")
 
     # Get the indices for training and validation data
     x_train_fold, x_val_fold = x_train[train_index], x_train[test_index]
     y_train_fold, y_val_fold = y_train[train_index], y_train[test_index]
 
-    # Train the model with the learning rate scheduler and early stopping callbacks
-    model.fit(x_train_fold, y_train_fold, epochs=100, batch_size=32, validation_data=(x_val_fold, y_val_fold), callbacks=[reduce_lr, early_stopping])
+    # Create the model with the best hyperparameters
+    model = create_lstm_model(best_units, best_dropout_rate, best_learning_rate)
 
-    # Make predictions for the validation set
-    predictions_fold = model.predict(x_val_fold)
-
-    # Store the predictions and true values for this fold
-    predictions_fold = np.array(predictions_fold)
-    predictions_fold = scaler.inverse_transform(predictions_fold.reshape(-1, 1)).flatten()
-    true_values_fold = scaler.inverse_transform(y_val_fold.reshape(-1, 1)).flatten()
-
-    # Evaluate the performance on this fold (calculate Mean Squared Error)
-    mse = np.mean((predictions_fold - true_values_fold) ** 2)
-    print(f"Mean Squared Error for Fold {fold}: {mse}")
+    # Train and evaluate the model on this fold
+    model, mse = train_and_evaluate_model(model, x_train_fold, y_train_fold, x_val_fold, y_val_fold)
 
     # Store the MSE for this fold
     mean_squared_errors.append(mse)
 
-    print(f"Completed Fold {fold} out of {n_splits}")
+    print(f"Completed Fold {fold} out of {n_splits_walk_forward}")
     fold += 1
 
 # Calculate the average MSE across all folds
 average_mse = np.mean(mean_squared_errors)
-print(f"Average Mean Squared Error across {n_splits} folds: {average_mse}")
+print(f"Average Mean Squared Error across {n_splits_walk_forward} folds: {average_mse}")
 
 # Convert dates to numerical format for the x-axis
 dts_actual = pd.to_datetime(test_data.index)
