@@ -71,17 +71,17 @@ best_dropout_rate = 0.4
 best_learning_rate = 0.0001
 
 # Define the LSTM model with the best hyperparameters
-def create_lstm_model(units, dropout_rate, learning_rate):
+def create_lstm_model(best_units, best_dropout_rate, best_learning_rate):
     model = Sequential()
-    model.add(LSTM(units=units, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3)))
-    model.add(Dropout(dropout_rate))
-    model.add(LSTM(units=units, activation='tanh', return_sequences=True))
-    model.add(Dropout(dropout_rate))
-    model.add(LSTM(units=int(units/2), activation='relu'))
-    model.add(Dropout(dropout_rate))
+    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3)))
+    model.add(Dropout(best_dropout_rate))
+    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True))
+    model.add(Dropout(best_dropout_rate))
+    model.add(LSTM(units=int(best_units/2), activation='relu'))
+    model.add(Dropout(best_dropout_rate))
     model.add(Dense(units=1))
     
-    optimizer = Adam(learning_rate=learning_rate)
+    optimizer = Adam(learning_rate=best_learning_rate)
     model.compile(optimizer=optimizer, loss='mean_squared_error')
     
     return model
@@ -150,17 +150,6 @@ def train_and_evaluate_model(model, x_train, y_train, x_val, y_val):
 
     return model, mse
 
-# Define the hyperparameter grid
-param_grid = {
-    'units': [32, 64, 128],
-    'dropout_rate': [0.2, 0.3, 0.4],
-    'learning_rate': [0.001, 0.0001]
-}
-
-# Perform manual hyperparameter tuning
-best_mse = float('inf')
-best_params = None
-
 # Perform TimeSeriesSplit for cross-validation
 n_splits = 5
 tscv = TimeSeriesSplit(n_splits=n_splits)
@@ -187,12 +176,6 @@ for train_index, val_index in tscv.split(x_train):
 
     print(f"Completed Fold {fold} out of {n_splits}")
     fold += 1
-
-# Add EarlyStopping callback
-early_stopping = EarlyStopping(patience=5, restore_best_weights=True)
-
-# Define the learning rate scheduler
-reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.0001)
 
 # Compile the model with the optimizer and loss function
 model.compile(optimizer='adam', loss='mean_squared_error')
