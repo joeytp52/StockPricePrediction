@@ -98,11 +98,10 @@ def get_scaled_data(train_data, test_data):
 
     return train_scaled, test_scaled
 
-def get_test_data(company):
+def get_test_data(company, scaler):
+    # Fetch test data from Yahoo Finance
     test_start = dt.datetime(2020, 1, 1)
     test_end = dt.datetime.now()
-
-    # Fetch test data from Yahoo Finance
     test_data = yf.download(company, start=test_start, end=test_end)
 
     # Calculate RSI for the test closing prices
@@ -112,8 +111,9 @@ def get_test_data(company):
     # Merge the test data into a single dataset
     test_data_with_rsi = np.hstack((test_closing_prices.values.reshape(-1, 1), test_data['Volume'].values.reshape(-1, 1), test_rsi.values.reshape(-1, 1)))
 
-    # Handle NaN values in test_data_with_rsi within this fold
-    test_data_with_rsi = np.nan_to_num(test_data_with_rsi, nan=np.nanmean(test_data_with_rsi))
+    # Handle NaN values in test_data_with_rsi using the mean of the training data
+    mean_training_rsi = np.nanmean(test_data_with_rsi[:, 2])  # Calculate mean of RSI in the training data
+    test_data_with_rsi[:, 2] = np.nan_to_num(test_data_with_rsi[:, 2], nan=mean_training_rsi)
 
     # Separate the closing prices, volume, and RSI data
     test_closing_prices = test_data_with_rsi[:, 0]
