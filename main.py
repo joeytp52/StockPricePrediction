@@ -73,11 +73,11 @@ best_learning_rate = 0.0001
 # Define the LSTM model with the best hyperparameters
 def create_lstm_model(best_units, best_dropout_rate, best_learning_rate):
     model = Sequential()
-    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3)))
+    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True, input_shape=(prediction_days, 3), kernel_regularizer=l2(0.001)))
     model.add(Dropout(best_dropout_rate))
-    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True))
+    model.add(LSTM(units=best_units, activation='tanh', return_sequences=True, kernel_regularizer=l2(0.001)))
     model.add(Dropout(best_dropout_rate))
-    model.add(LSTM(units=int(best_units/2), activation='relu'))
+    model.add(LSTM(units=int(best_units/2), activation='relu', kernel_regularizer=l2(0.001)))
     model.add(Dropout(best_dropout_rate))
     model.add(Dense(units=1))
     
