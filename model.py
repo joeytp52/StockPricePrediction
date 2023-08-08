@@ -4,7 +4,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.feature_selection import RFE
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -160,9 +160,11 @@ rf_classifier_best.fit(X_train[:, rfe.support_], y_train)
 # Make predictions on the test set using the best model
 predictions_best = rf_classifier_best.predict(X_test[:, rfe.support_])
 
-# Calculate the accuracy of the best model
+# Calculate the accuracy and F1 of the best model
 accuracy_best = accuracy_score(y_test, predictions_best)
 print(f"Best Model Accuracy: {accuracy_best:.2f}")
+f1_best = f1_score(y_test, predictions_best)
+print(f"Best Model F1: {f1_best:.2f}")
 
 # Plotting the confusion matrix for the best model
 conf_matrix_best = confusion_matrix(y_test, predictions_best)
