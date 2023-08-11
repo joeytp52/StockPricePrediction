@@ -3,11 +3,18 @@ import pandas as pd
 import yfinance as yf
 from sklearn.impute import SimpleImputer
 from datetime import datetime
-import joblib
+from model import selected_features
 
 # Load the saved model
 model_filename = 'random_forest_model.pkl'
 loaded_model = joblib.load(model_filename)
+
+# Print feature importances
+print("Feature Importances:", loaded_model.feature_importances_)
+
+# Print feature importances with feature names
+for feature, importance in zip(selected_features, loaded_model.feature_importances_):
+    print(f"{feature}: {importance}")
 
 def prepare_data(stock_data, look_back=5):
     data = stock_data.copy()
@@ -28,7 +35,7 @@ def get_stock_data(symbol, start_date, end_date):
     return stock_data
 
 # Set the stock symbol and date range
-stock_symbol = 'META'  # Replace with the desired stock symbol
+stock_symbol = 'AAPL '  # Replace with the desired stock symbol
 start_date = '2012-01-01'  # Replace with the desired start date
 end_date = datetime.today().strftime('%Y-%m-%d')
 
@@ -38,6 +45,10 @@ stock_data = get_stock_data(stock_symbol, start_date, end_date)
 # Prepare the data for training
 look_back_days = 5
 data = prepare_data(stock_data, look_back=look_back_days)
+
+# Save the prepared data to a CSV file
+prepared_data_filename = 'prepared_data.csv'
+data.to_csv(prepared_data_filename, index=False)
 
 def calculate_rsi(prices, window=14):
     deltas = prices.diff()
@@ -113,7 +124,7 @@ additional_features = pd.DataFrame({
 data_imputed = pd.concat([data, additional_features], axis=1)
 
 # Step 2: Prepare the Features
-desired_columns = ['Close', 'Adj Close', 'Close_Shifted', 'Up_Down']
+desired_columns = selected_features # Include the best features and the target
 current_features = data_imputed[desired_columns].iloc[-1, :].values.reshape(1, -1)  # Use the most recent row
 
 # Print input data
@@ -121,11 +132,15 @@ print("Input Features:")
 print(current_features)
 
 # Step 3: Make Predictions
+predicted_probabilities = loaded_model.predict_proba(current_features)
 predicted_label = loaded_model.predict(current_features)
 
 # Print loaded model
 print("Loaded Model:")
 print(loaded_model)
+
+# Print predicted probabilities
+print("Predicted Probabilities:", predicted_probabilities)
 
 # Print predicted label
 print("Predicted Label:", predicted_label)
