@@ -24,17 +24,55 @@ def get_stock_data(symbol, start_date, end_date):
     stock_data = yf.download(symbol, start=start_date, end=end_date)
     return stock_data
 
-# Set the stock symbol and date range
-stock_symbol = 'AAPL'  # Replace with the desired stock symbol
-start_date = '2012-01-01'  # Replace with the desired start date
+# List of stock symbols
+stock_symbols = ['AAPL', 'PFE', 'SHW', 'AMT', 'PG', 'TSLA', 'XOM', 'BA', 'T', 'BAC']  # Add more stock symbols as needed
+
+# Date range
+start_date = '2012-01-01'
 end_date = datetime.today().strftime('%Y-%m-%d')
 
-# Get historical stock price data
-stock_data = get_stock_data(stock_symbol, start_date, end_date)
-
-# Prepare the data for training
+# Prepare data for all stocks
 look_back_days = 5
-data = prepare_data(stock_data, look_back=look_back_days)
+all_data = []
+
+# Function to calculate Stochastic Oscillator
+def calculate_stochastic(prices, high, low, window=14):
+    stoch_k = (prices - low.rolling(window=window, min_periods=1).min()) / \
+              (high.rolling(window=window, min_periods=1).max() - low.rolling(window=window, min_periods=1).min())
+    stoch_d = stoch_k.rolling(window=3, min_periods=1).mean()  # You can adjust the window for stoch_d if needed
+    return stoch_k, stoch_d
+
+# Function to calculate Simple Moving Averages (SMA)
+def calculate_sma(prices, window=10, name='SMA'):
+    sma = prices.rolling(window=window, min_periods=1).mean()
+    return sma.rename(f'{name}_{window}')
+
+# Function to calculate Exponential Moving Averages (EMA)
+def calculate_ema(prices, window=10, name='EMA'):
+    ema = prices.ewm(span=window, min_periods=1, adjust=False).mean()
+    return ema.rename(f'{name}_{window}')
+
+# Function to calculate Fibonacci Retracement Levels
+def calculate_fibonacci_levels(prices, high, low, window=20):
+    highest_high = high.rolling(window=window, min_periods=1).max()
+    lowest_low = low.rolling(window=window, min_periods=1).min()
+
+    range_percent = (highest_high - lowest_low) / highest_high * 100
+
+    fib_0 = highest_high
+    fib_23_6 = highest_high - (range_percent * 0.236)
+    fib_38_2 = highest_high - (range_percent * 0.382)
+    fib_50 = highest_high - (range_percent * 0.5)
+    fib_61_8 = highest_high - (range_percent * 0.618)
+    fib_100 = lowest_low
+
+    return fib_0, fib_23_6, fib_38_2, fib_50, fib_61_8, fib_100
+
+# Function to calculate RSI Divergence
+def calculate_rsi_divergence(rsi):
+    rsi_shifted = rsi.shift()
+    rsi_divergence = rsi - rsi_shifted
+    return rsi_divergence
 
 def calculate_rsi(prices, window=14):
     deltas = prices.diff()
@@ -47,7 +85,6 @@ def calculate_rsi(prices, window=14):
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
-
 
 def calculate_macd(prices, short_window=12, long_window=26, signal_window=9):
     short_ema = prices.ewm(span=short_window, min_periods=1, adjust=False).mean()
@@ -91,20 +128,75 @@ def calculate_historical_volatility(prices, window=21):
     historical_volatility = returns.rolling(window=window).std() * (252 ** 0.5)  # Annualized volatility
     return historical_volatility
 
-# Collect additional features
-additional_features = pd.DataFrame({
-    'Volume': stock_data['Volume'],
-    'MA_10': stock_data['Close'].rolling(window=10).mean(),
-    'MA_50': stock_data['Close'].rolling(window=50).mean(),
-    'RSI': calculate_rsi(stock_data['Close']),
-    'MACD': calculate_macd(stock_data['Close'])[0],
-    'Upper_Band': calculate_bollinger_bands(stock_data['Close'])[0],
-    'Lower_Band': calculate_bollinger_bands(stock_data['Close'])[1],
-    'ROC': calculate_roc(stock_data['Close']),
-    'PVT': calculate_pvt(stock_data['Close'], stock_data['Volume']),
-    'ATR': calculate_atr(stock_data['High'], stock_data['Low'], stock_data['Close']),
-    'Historical_Volatility': calculate_historical_volatility(stock_data['Close']),
+for stock_symbol in stock_symbols:
+    stock_data = get_stock_data(stock_symbol, start_date, end_date)
+    
+    # Calculate Stochastic Oscillator
+    stoch_k, stoch_d = calculate_stochastic(stock_data['Close'], stock_data['High'], stock_data['Low'])
+    fib_0, fib_23_6, fib_38_2, fib_50, fib_61_8, fib_100 = calculate_fibonacci_levels(
+        stock_data['Close'], stock_data['High'], stock_data['Low']
+    )
+
+    # Calculate RSI Divergence
+    rsi_values = calculate_rsi(stock_data['Close'])
+    rsi_divergence = calculate_rsi_divergence(rsi_values)
+    
+    # Calculate MACD
+    macd, signal_line = calculate_macd(stock_data['Close'])
+    
+    # Calculate Bollinger Bands
+    upper_band, lower_band = calculate_bollinger_bands(stock_data['Close'])
+    
+    # Calculate ROC
+    roc = calculate_roc(stock_data['Close'])
+    
+    # Calculate PVT
+    pvt = calculate_pvt(stock_data['Close'], stock_data['Volume'])
+    
+    # Calculate ATR
+    atr = calculate_atr(stock_data['High'], stock_data['Low'], stock_data['Close'])
+    
+    # Calculate Historical Volatility
+    historical_volatility = calculate_historical_volatility(stock_data['Close'])
+    
+    data = prepare_data(stock_data, look_back=look_back_days)
+    
+    # Merge additional features and calculated technical indicators
+    additional_features = pd.DataFrame({
+        'Volume': stock_data['Volume'],
+        'MA_10': stock_data['Close'].rolling(window=10).mean(),
+        'MA_50': stock_data['Close'].rolling(window=50).mean(),
+        'RSI': calculate_rsi(stock_data['Close']),
+        'MACD': calculate_macd(stock_data['Close'])[0],
+        'Upper_Band': calculate_bollinger_bands(stock_data['Close'])[0],
+        'Lower_Band': calculate_bollinger_bands(stock_data['Close'])[1],
+        'ROC': calculate_roc(stock_data['Close']),
+        'PVT': calculate_pvt(stock_data['Close'], stock_data['Volume']),
+        'ATR': calculate_atr(stock_data['High'], stock_data['Low'], stock_data['Close']),
+        'Historical_Volatility': calculate_historical_volatility(stock_data['Close']),
+        'Stoch_K':  stoch_k,
+        'Stoch_D':  stoch_d,
+        'SMA_20': calculate_sma(stock_data['Close'], window=20),
+        'EMA_20': calculate_ema(stock_data['Close'], window=20),
+        'SMA_50': calculate_sma(stock_data['Close'], window=50),
+        'EMA_50':  calculate_ema(stock_data['Close'], window=50),
+        'Fib_0': fib_0,
+        'Fib_23_6': fib_23_6,
+        'Fib_38_2': fib_38_2,
+        'Fib_50': fib_50,
+        'Fib_61_8': fib_61_8,
+        'Fib_100': fib_100,
+        'RSI_Divergence': rsi_divergence,
+        'SMA_100': calculate_sma(stock_data['Close'], window=100, name='SMA'),
+        'EMA_100': calculate_ema(stock_data['Close'], window=100, name='EMA'),
 })
+    
+    data = pd.concat([data, additional_features], axis=1)
+    all_data.append(data)
+
+# Merge data for all stocks
+merged_data = pd.concat(all_data)
+merged_data.to_csv('merged_data.csv', index=False)
 
 # Merge additional features with the existing dataset
 data = pd.concat([data, additional_features], axis=1)
