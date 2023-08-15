@@ -60,7 +60,7 @@ def calculate_ema(prices, window=10, name='EMA'):
     return ema.rename(f'{name}_{window}')
 
 # Function to calculate Fibonacci Retracement Levels
-def calculate_fibonacci_levels(prices, high, low, window=20):
+def calculate_fibonacci_levels(high, low, window=20):
     highest_high = high.rolling(window=window, min_periods=1).max()
     lowest_low = low.rolling(window=window, min_periods=1).min()
 
@@ -208,10 +208,6 @@ print(current_features)
 # Step 3: Make Predictions
 predicted_probabilities = loaded_model.predict_proba(current_features)
 predicted_label = loaded_model.predict(current_features)
-
-# Print loaded model
-print("Loaded Model:")
-print(loaded_model)
 
 # Print predicted probabilities
 print("Predicted Probabilities:", predicted_probabilities)

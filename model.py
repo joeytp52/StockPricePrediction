@@ -53,7 +53,7 @@ def calculate_ema(prices, window=10, name='EMA'):
     return ema.rename(f'{name}_{window}')
 
 # Function to calculate Fibonacci Retracement Levels
-def calculate_fibonacci_levels(prices, high, low, window=20):
+def calculate_fibonacci_levels(high, low, window=20):
     highest_high = high.rolling(window=window, min_periods=1).max()
     lowest_low = low.rolling(window=window, min_periods=1).min()
 
