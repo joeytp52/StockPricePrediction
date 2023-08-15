@@ -229,7 +229,7 @@ param_grid = {
 similar_features = ["Close", "Adj Close", "Close_Shifted", "Close_Shifted_1", "Close_Shifted_2", "Close_Shifted_3", "Close_Shifted_4", "Close_Shifted_5",]
 
 # Initialize the RFE with the Random Forest classifier and desired number of features to select
-num_features_to_select = 3  # Change this to the desired number of features
+num_features_to_select = 4  # Change this to the desired number of features
 rfe = RFE(estimator=rf_classifier, n_features_to_select=num_features_to_select)
 
 # Fit the RFE to the training data to identify the most important features
