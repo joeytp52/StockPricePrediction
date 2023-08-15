@@ -228,45 +228,55 @@ param_grid = {
 }
 similar_features = ["Close", "Adj Close", "Close_Shifted", "Close_Shifted_1", "Close_Shifted_2", "Close_Shifted_3", "Close_Shifted_4", "Close_Shifted_5",]
 
-# Initialize the RFE with the Random Forest classifier and desired number of features to select
-num_features_to_select = 4  # Change this to the desired number of features
-rfe = RFE(estimator=rf_classifier, n_features_to_select=num_features_to_select)
-
-# Fit the RFE to the training data to identify the most important features
-rfe.fit(X_train, y_train)
-
-# Get the ranked features from RFE
-ranked_features = [feature for feature, rank in sorted(zip(data.columns[:-1], rfe.ranking_), key=lambda x: x[1])]
-
-# Select features, ensuring only one feature from the similar_features list
-selected_features = []
-similar_features_selected = False
-for feature in ranked_features:
-    if feature in similar_features and not similar_features_selected:
-        selected_features.append(feature)
-        similar_features_selected = True
-    elif feature not in similar_features:
-        selected_features.append(feature)
-        
-    if len(selected_features) == num_features_to_select:
-        break
-
-print("Selected Features after RFE:")
-print(selected_features)
-
-# Get the feature data after RFE selection
-X_train_rfe = rfe.transform(X_train)
-X_test_rfe = rfe.transform(X_test)
+# Initialize the RFE with the Random Forest classifier
+rfe = RFE(estimator=rf_classifier, n_features_to_select=None)  # Start with all features
 
 # Best Hyperparameters
 best_hyperparameters = {'max_depth': None, 'min_samples_leaf': 1, 'min_samples_split': 2, 'n_estimators': 100}
 
+# Define a threshold for improvement in performance
+performance_threshold = 0.005  # You can adjust this threshold as needed
+
+best_performance = 0
+best_features = None
+
+# Loop until no significant performance improvement
+while True:
+    # Fit RFE and evaluate performance on validation data
+    rfe.fit(X_train, y_train)
+    X_train_rfe = rfe.transform(X_train)
+    X_test_rfe = rfe.transform(X_test)
+    
+    # Train the Random Forest classifier using the best hyperparameters
+    rf_classifier_best = RandomForestClassifier(random_state=42, **best_hyperparameters)
+    rf_classifier_best.fit(X_train_rfe, y_train)
+    
+    # Make predictions on the validation set using the best model
+    predictions_val = rf_classifier_best.predict(X_test_rfe)
+    
+    # Calculate the accuracy of the model
+    current_performance = accuracy_score(y_test, predictions_val)
+    
+    # Check if performance improvement is significant
+    if current_performance - best_performance > performance_threshold:
+        best_performance = current_performance
+        best_features = rfe.support_
+        
+        # Update X_train and X_test with the selected features
+        X_train = X_train[:, best_features]
+        X_test = X_test[:, best_features]
+    else:
+        break
+
+print("Selected Features after Dynamic RFE:")
+print([feature for feature, selected in zip(data.columns[:-1], best_features) if selected])
+
 # Train the Random Forest classifier using the best hyperparameters
 rf_classifier_best = RandomForestClassifier(random_state=42, **best_hyperparameters)
-rf_classifier_best.fit(X_train[:, rfe.support_], y_train)
+rf_classifier_best.fit(X_train, y_train)
 
 # Make predictions on the test set using the best model
-predictions_best = rf_classifier_best.predict(X_test[:, rfe.support_])
+predictions_best = rf_classifier_best.predict(X_test)
 
 # Calculate the accuracy and F1 of the best model
 accuracy_best = accuracy_score(y_test, predictions_best)
