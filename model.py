@@ -10,6 +10,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
+import time
 
 def prepare_data(stock_data, look_back=5):
     data = stock_data.copy()
@@ -248,6 +249,9 @@ best_features = None
 # Initialize the tqdm progress bar for the RFE loop
 rfe_bar = tqdm(total=len(X_train[0]), desc="RFE Progress", ncols=100, leave=False)
 
+# Start the timer
+start_time = time.time()
+
 # Loop until no significant performance improvement
 while True:
     # Fit RFE and evaluate performance on validation data
@@ -279,8 +283,15 @@ while True:
     # Update the progress bar
     rfe_bar.update(1)
 
+# Stop the timer
+end_time = time.time()
+
 # Close the progress bar
 rfe_bar.close()
+
+# Calculate the duration
+duration = end_time - start_time
+print(f"Training duration: {duration:.2f} seconds")
 
 print("Selected Features after Dynamic RFE:")
 print([feature for feature, selected in zip(data.columns[:-1], best_features) if selected])
