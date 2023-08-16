@@ -26,7 +26,7 @@ def get_stock_data(symbol, start_date, end_date):
     return stock_data
 
 # List of stock symbols
-stock_symbols = ['AAPL', 'PFE', 'SHW', 'AMT', 'PG']  # Add more stock symbols as needed
+stock_symbols = ['AAPL', 'PFE', 'SHW', 'AMT', 'PG', 'TSLA', 'XOM', 'BA', 'T', 'BAC']  # Add more stock symbols as needed
 
 # Date range
 start_date = '2012-01-01'
@@ -247,29 +247,23 @@ best_features = None
 
 # Initialize the tqdm progress bar for the RFE loop
 rfe_bar = tqdm(total=len(X_train[0]), desc="RFE Progress", ncols=100, leave=False)
-print('pretest')
 
 # Loop until no significant performance improvement
 while True:
     # Fit RFE and evaluate performance on validation data
-    print('test')
     rfe.fit(X_train, y_train)
     X_train_rfe = rfe.transform(X_train)
     X_test_rfe = rfe.transform(X_test)
-    print('test1')
     
     # Train the Random Forest classifier using the best hyperparameters
     rf_classifier_best = RandomForestClassifier(random_state=42, **best_hyperparameters)
     rf_classifier_best.fit(X_train_rfe, y_train)
-    print('test2')
 
     # Make predictions on the validation set using the best model
     predictions_val = rf_classifier_best.predict(X_test_rfe)
-    print('test3')
 
     # Calculate the accuracy of the model
     current_performance = accuracy_score(y_test, predictions_val)
-    print('test4')
     
     # Check if performance improvement is significant
     if current_performance - best_performance > performance_threshold:
@@ -277,8 +271,8 @@ while True:
         best_features = rfe.support_
         
         # Update X_train and X_test with the selected features
-        X_train = X_train[:, best_features]
-        X_test = X_test[:, best_features]
+        X_train = X_train_rfe
+        X_test = X_test_rfe
     else:
         break
 
