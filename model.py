@@ -6,6 +6,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.feature_selection import RFE
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 from datetime import datetime
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
@@ -16,7 +17,7 @@ def prepare_data(stock_data, look_back=5):
     data['Up_Down'] = (data['Close_Shifted'] > data['Close']).astype(int)
     for i in range(1, look_back + 1):
         data[f'Close_Shifted_{i}'] = data['Close'].shift(-i)
-    data.dropna(inplace=True)
+    data.ffill(inplace=True)
     return data
 
 # Function to get historical stock price data from Yahoo Finance
@@ -25,7 +26,7 @@ def get_stock_data(symbol, start_date, end_date):
     return stock_data
 
 # List of stock symbols
-stock_symbols = ['AAPL', 'PFE', 'SHW', 'AMT', 'PG', 'TSLA', 'XOM', 'BA', 'T', 'BAC']  # Add more stock symbols as needed
+stock_symbols = ['AAPL', 'PFE', 'SHW', 'AMT', 'PG']  # Add more stock symbols as needed
 
 # Date range
 start_date = '2012-01-01'
@@ -198,12 +199,16 @@ for stock_symbol in stock_symbols:
 merged_data = pd.concat(all_data)
 merged_data.to_csv('merged_data.csv', index=False)
 
-# Merge additional features with the existing dataset
-data = pd.concat([data, additional_features], axis=1)
+# Merge additional features with the existing merged dataset
+merged_data_reset = merged_data.reset_index(drop=True)
+additional_features_reset = additional_features.reset_index(drop=True)
+
+merged_data_test = pd.concat([merged_data_reset, additional_features_reset], axis=1)
+merged_data_test.to_csv('merged_data_with_features.csv', index=False)
 
 # Split the data into features (X) and target (y)
-X = data.drop(['Up_Down'], axis=1).values
-y = data['Up_Down'].values
+X = merged_data_test.drop(['Up_Down'], axis=1).values
+y = merged_data_test['Up_Down'].values
 
 # Handle missing values in X with SimpleImputer
 imputer = SimpleImputer(strategy='mean') 
@@ -240,22 +245,31 @@ performance_threshold = 0.005  # You can adjust this threshold as needed
 best_performance = 0
 best_features = None
 
+# Initialize the tqdm progress bar for the RFE loop
+rfe_bar = tqdm(total=len(X_train[0]), desc="RFE Progress", ncols=100, leave=False)
+print('pretest')
+
 # Loop until no significant performance improvement
 while True:
     # Fit RFE and evaluate performance on validation data
+    print('test')
     rfe.fit(X_train, y_train)
     X_train_rfe = rfe.transform(X_train)
     X_test_rfe = rfe.transform(X_test)
+    print('test1')
     
     # Train the Random Forest classifier using the best hyperparameters
     rf_classifier_best = RandomForestClassifier(random_state=42, **best_hyperparameters)
     rf_classifier_best.fit(X_train_rfe, y_train)
-    
+    print('test2')
+
     # Make predictions on the validation set using the best model
     predictions_val = rf_classifier_best.predict(X_test_rfe)
-    
+    print('test3')
+
     # Calculate the accuracy of the model
     current_performance = accuracy_score(y_test, predictions_val)
+    print('test4')
     
     # Check if performance improvement is significant
     if current_performance - best_performance > performance_threshold:
@@ -267,6 +281,12 @@ while True:
         X_test = X_test[:, best_features]
     else:
         break
+
+    # Update the progress bar
+    rfe_bar.update(1)
+
+# Close the progress bar
+rfe_bar.close()
 
 print("Selected Features after Dynamic RFE:")
 print([feature for feature, selected in zip(data.columns[:-1], best_features) if selected])
