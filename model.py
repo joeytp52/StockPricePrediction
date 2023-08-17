@@ -27,7 +27,7 @@ def get_stock_data(symbol, start_date, end_date):
     return stock_data
 
 # List of stock symbols
-stock_symbols = ['AAPL', 'PFE', 'SHW', 'AMT', 'PG', 'TSLA', 'XOM', 'BA', 'T', 'BAC']  # Add more stock symbols as needed
+stock_symbols = ['AAPL', 'PFE', 'SHW']  # Add more stock symbols as needed
 
 # Date range
 start_date = '2012-01-01'
@@ -235,7 +235,8 @@ param_grid = {
 similar_features = ["Close", "Adj Close", "Close_Shifted", "Close_Shifted_1", "Close_Shifted_2", "Close_Shifted_3", "Close_Shifted_4", "Close_Shifted_5",]
 
 # Initialize the RFE with the Random Forest classifier
-rfe = RFE(estimator=rf_classifier, n_features_to_select=None)  # Start with all features
+min_selected_features = 5  # Minimum number of features you want to select
+rfe = RFE(estimator=rf_classifier, n_features_to_select=min_selected_features)  # Start with the minimum number of features
 
 # Best Hyperparameters
 best_hyperparameters = {'max_depth': None, 'min_samples_leaf': 1, 'min_samples_split': 2, 'n_estimators': 100}
@@ -289,9 +290,11 @@ end_time = time.time()
 # Close the progress bar
 rfe_bar.close()
 
-# Calculate the duration
-duration = end_time - start_time
-print(f"Training duration: {duration:.2f} seconds")
+# Calculate the duration in minutes and seconds
+duration_seconds = end_time - start_time
+minutes = int(duration_seconds // 60)
+seconds = int(duration_seconds % 60)
+print(f"Training duration: {minutes} minutes and {seconds} seconds")
 
 print("Selected Features after Dynamic RFE:")
 print([feature for feature, selected in zip(data.columns[:-1], best_features) if selected])
