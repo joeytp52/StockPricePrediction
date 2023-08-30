@@ -16,9 +16,14 @@ def prepare_data(stock_data, look_back=5):
     data = stock_data.copy()
     data['Close_Shifted'] = data['Close'].shift(-1)
     data['Up_Down'] = (data['Close_Shifted'] > data['Close']).astype(int)
+
+    # Calculate shifted prices using numpy.shift()
     for i in range(1, look_back + 1):
         data[f'Close_Shifted_{i}'] = data['Close'].shift(-i)
-    data.ffill(inplace=True)
+
+    # Fill missing values using pandas.fillna()
+    data.fillna(method='ffill', inplace=True)
+
     return data
 
 # Function to get historical stock price data from Yahoo Finance
@@ -27,7 +32,7 @@ def get_stock_data(symbol, start_date, end_date):
     return stock_data
 
 # List of stock symbols
-stock_symbols = ['AAPL', 'PFE', 'SHW']  # Add more stock symbols as needed
+stock_symbols = ['AAPL', 'PFE', 'HCA', 'JCI', 'TAP', 'UBER', 'WBD', 'PLD', 'TRGP', 'ALB']  # Add more stock symbols as needed
 
 # Date range
 start_date = '2012-01-01'
@@ -38,9 +43,9 @@ look_back_days = 5
 all_data = []
 
 # Function to calculate Stochastic Oscillator
-def calculate_stochastic(prices, high, low, window=14):
-    stoch_k = (prices - low.rolling(window=window, min_periods=1).min()) / \
-              (high.rolling(window=window, min_periods=1).max() - low.rolling(window=window, min_periods=1).min())
+def calculate_stochastic(prices, high, low):
+    stoch_k = (prices - low.rolling(window=14, min_periods=1).min()) / \
+              (high.rolling(window=14, min_periods=1).max() - low.rolling(window=14, min_periods=1).min())
     stoch_d = stoch_k.rolling(window=3, min_periods=1).mean()  # You can adjust the window for stoch_d if needed
     return stoch_k, stoch_d
 
@@ -101,6 +106,8 @@ def calculate_macd(prices, short_window=12, long_window=26, signal_window=9):
 def calculate_bollinger_bands(prices, window=20):
     rolling_mean = prices.rolling(window=window, min_periods=1).mean()
     rolling_std = prices.rolling(window=window, min_periods=1).std()
+
+    # Calculate upper and lower bands using numpy.std()
     upper_band = rolling_mean + 2 * rolling_std
     lower_band = rolling_mean - 2 * rolling_std
     return upper_band, lower_band
@@ -133,6 +140,9 @@ def calculate_historical_volatility(prices, window=21):
 for stock_symbol in stock_symbols:
     stock_data = get_stock_data(stock_symbol, start_date, end_date)
     
+    # Calculate daily percentage change
+    daily_percentage_change = stock_data['Close'].pct_change() * 100
+
     # Calculate Stochastic Oscillator
     stoch_k, stoch_d = calculate_stochastic(stock_data['Close'], stock_data['High'], stock_data['Low'])
     fib_0, fib_23_6, fib_38_2, fib_50, fib_61_8, fib_100 = calculate_fibonacci_levels(
@@ -170,6 +180,7 @@ for stock_symbol in stock_symbols:
         'MA_50': stock_data['Close'].rolling(window=50).mean(),
         'RSI': calculate_rsi(stock_data['Close']),
         'MACD': calculate_macd(stock_data['Close'])[0],
+        'Daily_Pct_Change': daily_percentage_change,
         'Upper_Band': calculate_bollinger_bands(stock_data['Close'])[0],
         'Lower_Band': calculate_bollinger_bands(stock_data['Close'])[1],
         'ROC': calculate_roc(stock_data['Close']),
@@ -303,8 +314,29 @@ print([feature for feature, selected in zip(data.columns[:-1], best_features) if
 rf_classifier_best = RandomForestClassifier(random_state=42, **best_hyperparameters)
 rf_classifier_best.fit(X_train, y_train)
 
-# Make predictions on the test set using the best model
+# Calculate the predicted labels using the best model
 predictions_best = rf_classifier_best.predict(X_test)
+
+# Create a DataFrame to store the results
+results_df = pd.DataFrame({
+    'True_Labels': y_test,
+    'Predicted_Labels': predictions_best
+})
+
+# Add the 'Close_Shifted' column from the test data to the results DataFrame
+results_df['Close_Shifted'] = X_test[:, similar_features.index('Close_Shifted')]
+
+# Calculate the absolute percentage change in Close_Shifted for correct predictions
+correct_predictions = results_df[results_df['True_Labels'] == results_df['Predicted_Labels']].copy()
+correct_predictions['Absolute_Percent_Change'] = (
+    abs(correct_predictions['Close_Shifted'] - correct_predictions['Close_Shifted'].shift()) /
+    correct_predictions['Close_Shifted'].shift()
+) * 100
+
+# Calculate the average magnitude of price change for correct predictions
+average_magnitude_change = correct_predictions['Absolute_Percent_Change'].mean()
+
+print(f"Average Magnitude of Price Change for Correct Predictions: {average_magnitude_change:.2f}%")
 
 # Calculate the accuracy and F1 of the best model
 accuracy_best = accuracy_score(y_test, predictions_best)
