@@ -347,10 +347,10 @@ print(f"Best Model F1: {f1_best:.2f}")
 # Plotting the confusion matrix for the best model
 conf_matrix_best = confusion_matrix(y_test, predictions_best)
 plt.figure(figsize=(6, 6))
-sns.heatmap(conf_matrix_best, annot=True, fmt='', cmap='Blues', xticklabels=['True', 'False'], yticklabels=['True', 'False'])
+sns.heatmap(conf_matrix_best, annot=True, fmt='', cmap='Blues', xticklabels=['Rise', 'Fall'], yticklabels=['Rise', 'Fall'])
 plt.title('Confusion Matrix for Best Model')
-plt.xlabel('Predicted Labels')
-plt.ylabel('True Labels')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
 plt.show()
 
 model_filename = 'random_forest_model.pkl'
