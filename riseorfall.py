@@ -27,7 +27,7 @@ def get_stock_data(symbol, start_date, end_date):
     return stock_data
 
 # Set the stock symbol and date range
-stock_symbol = 'FNMAJ'  # Replace with the desired stock symbol
+stock_symbol = 'T'  # Replace with the desired stock symbol
 start_date = '2012-01-01'  # Replace with the desired start date
 end_date = datetime.today().strftime('%Y-%m-%d')
 
@@ -198,7 +198,7 @@ additional_features = pd.DataFrame({
 data_imputed = pd.concat([data, additional_features], axis=1)
 
 # Step 2: Prepare the Features
-desired_features = ['Low', 'Close', 'Up_Down', 'High']  # List your desired features here
+desired_features = ['High', 'Low', 'Close', 'Close_Shifted', 'Up_Down']  # List your desired features here
 current_features = data_imputed[desired_features].iloc[-1, :].values.reshape(1, -1)  # Use the most recent row
 
 # Print input data
